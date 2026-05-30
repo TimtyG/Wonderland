@@ -26,7 +26,7 @@ namespace Server.System
         protected override void TaskWrk()
         {
 
-            if (cGlobal.Update_System != null)
+            if (cGlobal.Update_System != null && cGlobal.SrvSettings != null && cGlobal.SrvSettings.Update != null && cGlobal.SrvSettings.Update.UpdtControl != Server.Config.UpdtSetting.Never)
             {
                 DebugSystem.Write(DebugItemType.Info_Heavy, "Checking for Application Update");
                 cGlobal.Update_System.CheckForUpdates_Application();
@@ -46,7 +46,7 @@ namespace Server.System
         protected override void TaskWrk()
         {
 
-            if (cGlobal.Update_System != null)
+            if (cGlobal.Update_System != null && cGlobal.SrvSettings != null && cGlobal.SrvSettings.Update != null && cGlobal.SrvSettings.Update.UpdtControl != Server.Config.UpdtSetting.Never)
             {
                 DebugSystem.Write(DebugItemType.Info_Heavy, "Checking for Map Updates");
                 cGlobal.Update_System.CheckForUpdates_Map();
@@ -79,8 +79,6 @@ namespace Server.System
             Assembly myass = Assembly.GetExecutingAssembly();
             string loc = Assembly.GetExecutingAssembly().Location;
             AppVer = new Version(FileVersionInfo.GetVersionInfo(Assembly.GetExecutingAssembly().Location).FileVersion);
-            CheckForUpdates_Application();
-            CheckForUpdates_Map();
 
             DebugSystem.Write("[Init] - Creating Update Tasks");
             cGlobal.ApplicationTasks.CreateTask(new ApplicationUpdateCheck_Task(new TimeSpan(0, 10, 0)));
@@ -97,6 +95,9 @@ namespace Server.System
 
         public async void CheckForUpdates_Application()
         {
+            if (cGlobal.SrvSettings == null || cGlobal.SrvSettings.Update == null || cGlobal.SrvSettings.Update.UpdtControl == Server.Config.UpdtSetting.Never)
+                return;
+
             if (await GitClient.CheckFor_Update("Wonderland-Private-Server", "Develop", AppVer))
             {
                 Thread.Sleep(3000);
@@ -159,7 +160,7 @@ namespace Server.System
 
         void client_onError(object sender, Exception e)
         {
-            DebugSystem.Write(new ExceptionData(e));
+            DebugSystem.Write(new ExceptionData(ExceptionSeverity.Warning, "Git update check failed (non-fatal): " + e.Message));
         }
     }
 }

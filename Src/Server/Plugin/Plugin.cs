@@ -172,6 +172,8 @@ namespace Plugin
             }
 
             DebugSystem.Write("[PluginSystem][Info] - Found " + MapList.Count + " Maps");
+            if (MapList.Count == 0)
+                DebugSystem.Write("[PluginSystem][Warning] - No map DLLs were found in " + folderwatch.Path + "; character login will fail until compiled map plugins are copied there.");
         }
 
         //public AC GetAC(int id)

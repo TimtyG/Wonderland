@@ -5,6 +5,8 @@ using System.Text;
 using System.Threading.Tasks;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Data.Common;
+using System.IO;
 namespace Server.Config
 {
     public class DataBaseConfig : INotifyPropertyChanged
@@ -36,6 +38,70 @@ namespace Server.Config
         /// Type of Server we are connecting to
         /// </summary>
         public RCLibrary.Core.DataBaseTypes Server_Type;
+
+        public DataBaseConfig()
+        {
+            EnsureDefaults();
+        }
+
+        public void EnsureDefaults()
+        {
+            if (string.IsNullOrWhiteSpace(ServerIP)) ServerIP = "127.0.0.1";
+            if (Port == 0) Port = 3306;
+            if (string.IsNullOrWhiteSpace(User)) User = "root";
+            if (Pass == null) Pass = string.Empty;
+            if (string.IsNullOrWhiteSpace(DataBase)) DataBase = "wonderland";
+            if (string.IsNullOrWhiteSpace(TableName_Ref)) TableName_Ref = "user";
+            if (string.IsNullOrWhiteSpace(Username_Ref)) Username_Ref = "username";
+            if (string.IsNullOrWhiteSpace(Password_Ref)) Password_Ref = "password";
+            if (string.IsNullOrWhiteSpace(UserID_Ref)) UserID_Ref = "userID";
+            if (string.IsNullOrWhiteSpace(CharacterID1_Ref)) CharacterID1_Ref = "character1ID";
+            if (string.IsNullOrWhiteSpace(CharacterID2_Ref)) CharacterID2_Ref = "character2ID";
+            if (string.IsNullOrWhiteSpace(IM_Ref)) IM_Ref = "IM";
+            if (string.IsNullOrWhiteSpace(Char_Delete_Code_Ref)) Char_Delete_Code_Ref = "char_delete_code";
+        }
+
+        public DbConnection CreateConnection()
+        {
+            EnsureDefaults();
+
+            if (IsSqlite)
+            {
+                var dbPath = DataBase;
+                if (string.IsNullOrWhiteSpace(dbPath))
+                    dbPath = Path.Combine(Environment.CurrentDirectory, "Data", "ServerDataBase.db");
+                else if (!Path.IsPathRooted(dbPath))
+                    dbPath = Path.Combine(Environment.CurrentDirectory, dbPath);
+
+                return new System.Data.SQLite.SQLiteConnection("Data Source=" + dbPath + ";Version=3;");
+            }
+
+            var connectionString = string.Format(
+                "Server={0};Port={1};Database={2};Uid={3};Pwd={4};CharSet=utf8;Allow User Variables=True;",
+                ServerIP,
+                Port,
+                DataBase,
+                User,
+                Pass ?? string.Empty);
+            return new MySql.Data.MySqlClient.MySqlConnection(connectionString);
+        }
+
+        public string SafeConnectionSummary
+        {
+            get
+            {
+                EnsureDefaults();
+                if (IsSqlite)
+                    return string.Format("{0} database '{1}'", Server_Type, DataBase);
+
+                return string.Format("{0} database '{1}' at {2}:{3} as '{4}'", Server_Type, DataBase, ServerIP, Port, User);
+            }
+        }
+
+        bool IsSqlite
+        {
+            get { return Server_Type.ToString().IndexOf("sqlite", StringComparison.OrdinalIgnoreCase) >= 0; }
+        }
 
         string _TableName_Ref; public string TableName_Ref { get { return _TableName_Ref; } set { SetField(ref _TableName_Ref, value); } }
         string _Username_Ref; public string Username_Ref { get { return _Username_Ref; } set { SetField(ref _Username_Ref, value); } }

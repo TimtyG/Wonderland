@@ -19,5 +19,12 @@ namespace Server.Config
         public UpdtSetting UpdtControl;
         public TimeSpan UpdtChk_Interval;
         public TimeSpan AutoUpdt_Schedule;
+
+        public UpdateSetting()
+        {
+            UpdtControl = UpdtSetting.Never;
+            UpdtChk_Interval = new TimeSpan(0, 10, 0);
+            AutoUpdt_Schedule = new TimeSpan(1, 0, 0);
+        }
     }
 }

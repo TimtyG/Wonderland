@@ -57,7 +57,7 @@
     </Reference>
     <Reference Include="GupdtSrv, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\..\..\Dropbox\Dlls\GupdtSrv.dll</HintPath>
+      <HintPath>DLLS\GupdtSrv.dll</HintPath>
     </Reference>
     <Reference Include="log4net">
       <HintPath>packages\log4net.2.0.3\lib\net40-full\log4net.dll</HintPath>

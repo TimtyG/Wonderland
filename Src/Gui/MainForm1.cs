@@ -27,6 +27,84 @@ namespace Wonderland_Private_Server
             InitializeComponent();
         }
 
+        void ApplyDatabaseSettings()
+        {
+            if (cGlobal.SrvSettings == null)
+            {
+                DebugSystem.Write("Database settings are not loaded; database connections were not configured");
+                return;
+            }
+
+            cGlobal.SrvSettings.EnsureDefaults();
+            DebugSystem.Write("Database settings loaded: " + cGlobal.SrvSettings.DB.SafeConnectionSummary);
+
+            ConfigureDatabaseConnection(cGlobal.gUserDataBase, "UserDatabase");
+            ConfigureDatabaseConnection(cGlobal.gCharacterDataBase, "CharacterDatabase");
+            ConfigureDatabaseConnection(cGlobal.gGameDataBase, "GameDatabase");
+        }
+
+        void ConfigureDatabaseConnection(RCLibrary.Core.DataBase target, string name)
+        {
+            if (target == null)
+            {
+                DebugSystem.Write(name + " is not initialized; skipping database connection setup");
+                return;
+            }
+
+            try
+            {
+                var connection = cGlobal.SrvSettings.DB.CreateConnection();
+                var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic;
+
+                if (!SetPropertyValue(target, "Connection", connection, flags))
+                {
+                    DebugSystem.Write(name + " could not be configured because RCLibrary.Core.DataBase.Connection was not found");
+                    return;
+                }
+
+                SetPropertyValue(target, "ServType", cGlobal.SrvSettings.DB.Server_Type, flags);
+                SetFieldValue(target, "ServType", cGlobal.SrvSettings.DB.Server_Type, flags);
+
+                DebugSystem.Write(name + " connection configured: " + cGlobal.SrvSettings.DB.SafeConnectionSummary);
+            }
+            catch (Exception e)
+            {
+                DebugSystem.Write(new ExceptionData(ExceptionSeverity.Warning, name + " connection setup failed: " + e.Message));
+            }
+        }
+
+        bool SetPropertyValue(object target, string propertyName, object value, System.Reflection.BindingFlags flags)
+        {
+            var type = target.GetType();
+            while (type != null)
+            {
+                var property = type.GetProperty(propertyName, flags);
+                if (property != null && property.CanWrite)
+                {
+                    property.SetValue(target, value, null);
+                    return true;
+                }
+                type = type.BaseType;
+            }
+            return false;
+        }
+
+        bool SetFieldValue(object target, string fieldName, object value, System.Reflection.BindingFlags flags)
+        {
+            var type = target.GetType();
+            while (type != null)
+            {
+                var field = type.GetField(fieldName, flags);
+                if (field != null)
+                {
+                    field.SetValue(target, value);
+                    return true;
+                }
+                type = type.BaseType;
+            }
+            return false;
+        }
+
 
         void DebugSystem_onNewLog(object sender, DebugItem j)
         {
@@ -159,6 +237,7 @@ namespace Wonderland_Private_Server
 
 
 
+            cGlobal.SrvSettings.EnsureDefaults();
             cGlobal.gUserDataBase.TableName = cGlobal.SrvSettings.DB.TableName_Ref;
             cGlobal.gUserDataBase.Username_Ref = cGlobal.SrvSettings.DB.Username_Ref;
             cGlobal.gUserDataBase.Password_Ref = cGlobal.SrvSettings.DB.Password_Ref;
@@ -171,7 +250,7 @@ namespace Wonderland_Private_Server
             //if (GitUptOption.SelectedIndex != (byte)cGlobal.SrvSettings.Update.UpdtControl)
             //    GitUptOption.SelectedIndex = (byte)cGlobal.SrvSettings.Update.UpdtControl;
 
-
+            ApplyDatabaseSettings();
 
             #endregion
 

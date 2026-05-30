@@ -31,7 +31,15 @@ namespace Server.Config
             Update = new UpdateSetting();
             DB = new DataBaseConfig();
             diskio = new XmlSerializer(this.GetType());
+            EnsureDefaults();
             
+        }
+
+        public void EnsureDefaults()
+        {
+            if (Update == null) Update = new UpdateSetting();
+            if (DB == null) DB = new DataBaseConfig();
+            DB.EnsureDefaults();
         }
 
 
