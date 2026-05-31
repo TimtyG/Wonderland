@@ -156,6 +156,7 @@ namespace Game
         public virtual MapType Type { get { return MapType.RegularMap; } }
         public virtual uint MapID { get { lock (mlock) return m_mapid; } set { lock (mlock)m_mapid = value; } }
         public virtual string MapName { get { return ""; } }
+        public IReadOnlyList<Player> Players { get { return m_playerlist.AsReadOnly(); } }
         #endregion
 
         public void Dispose()

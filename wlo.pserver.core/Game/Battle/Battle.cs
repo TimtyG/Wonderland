@@ -28,6 +28,7 @@ namespace Game.Battle
     public class Battle
     {
         readonly object mylock = new object();
+        readonly List<BattleAction> pendingActions = new List<BattleAction>();
         bool blockupdt;
 
         #region Definitions
@@ -56,6 +57,7 @@ namespace Game.Battle
         public Battle(UInt16 BG,int BattleID)
         {
             Background = BG;
+            battleID = (UInt16)(BattleID & 0xFFFF);
             Side = new Dictionary<byte, BattleScene>();
             Side.Add(2, new BattleScene((BattleRole)2, this));
             Side.Add(4, new BattleScene((BattleRole)4, this));
@@ -128,56 +130,218 @@ namespace Game.Battle
         {
             if (blockupdt) return;
             blockupdt = true;
-            if (BattleState == eBattleState.Active)//battle has activated
+            try
             {
-                //check if each side has players that are alive
+                if (BattleState != eBattleState.Active)
+                    return;
+
                 if (!(Side[2].Total_Fighters_Alive > 0 && Side[5].Total_Fighters_Alive > 0) && RoundState != eBattleRoundState.CalculatingState)
                 {
-                    BattleState = eBattleState.Ended;
-                    EndBattle(eBattleLeaveType.BattleFinished); return;
+                    EndBattle(eBattleLeaveType.BattleFinished);
+                    return;
                 }
-                //check if every1 sent a command during ready round (
-                if (AllReady && /*!HasOrders &&*/ RoundState == eBattleRoundState.ReadyState)//every1 ready no action
-                    RoundState = eBattleRoundState.EndedState;
-                else if (RoundState == eBattleRoundState.EndedState /*&& HasOrders*/)//action finished more left
-                    RoundState = eBattleRoundState.ReadyState;
-                else if (RoundState == eBattleRoundState.EndedState /*&& !HasOrders*/)//Round over no action
-                    StartRound();
-                else if (roundend_time < DateTime.Now && RoundState == eBattleRoundState.PrepState || AllReady && RoundState == eBattleRoundState.PrepState)//Planning stage Every1 ready/timefinished
-                    RoundState = eBattleRoundState.ReadyState;
-                //else if (AllReady && HasOrders && RoundState == eBattleRoundState.ReadyState)//every1 ready has orders ready to do action i guess
-                //    Calculate();
+
+                if ((roundend_time < DateTime.Now || AllReady) && RoundState == eBattleRoundState.PrepState)
+                    ResolveActions();
             }
-            blockupdt = false;
+            finally
+            {
+                blockupdt = false;
+            }
         }
         
         //Send StartRd info
         public void StartRound()
         {
+            if (BattleState != eBattleState.Active)
+                return;
+
             RoundState = eBattleRoundState.PrepState;
+            roundend_time = DateTime.Now.AddSeconds(30);
+            pendingActions.Clear();
+
+            foreach (Fighter fighter in GetLiveFighters())
+            {
+                fighter.RdEndTime = roundend_time;
+                Player player = fighter as Player;
+                if (player != null)
+                    player.ClearBattleAction();
+            }
+
+            QueueNpcActions();
             Side[2].OnNewRound();
-            //foreach (var h in Side[2].Total_Fighters_Alive)
-            //    h.RdEndTime = DateTime.Now.AddSeconds(20);
             Side[5].OnNewRound();
-            //foreach (var h in Side[5].Total_Fighters_Alive)
-            //    h.RdEndTime = DateTime.Now.AddSeconds(20);
+
+            if (AllReady)
+                ResolveActions();
         }
         //Rcv Attk
         public void PLayer_BattleAction(BattleAction data)
         {
-            //data.unknownbyte = 1;
-            //if (Side[(byte)BattleRole.Attacking].BattleActionRecieved(data) || Side[(byte)BattleRole.Defending].BattleActionRecieved(data))
-            //{
-            //    SendPacket p = new SendPacket();
-            //    p.Pack(new byte[]{53, 5});
-            //    p.Pack(data.src.GridX);
-            //    p.Pack(data.src.GridY);
+            if (data == null || data.src == null || data.dst == null || BattleState != eBattleState.Active)
+                return;
 
-            //    foreach (Player gr in Side[(byte)BattleRole.Attacking].fighterlist.Where(c => c is Player))
-            //        gr.Send(p);
-            //    foreach (Player gr in Side[(byte)BattleRole.Defending].fighterlist.Where(c => c is Player))
-            //        gr.Send(p);
-            //}
+            lock (mylock)
+            {
+                if (!GetLiveFighters().Contains(data.src) || !GetLiveFighters().Contains(data.dst))
+                    return;
+
+                pendingActions.RemoveAll(c => c.src == data.src);
+                pendingActions.Add(data);
+
+                Player player = data.src as Player;
+                if (player != null)
+                    player.SetBattleAction(data);
+
+                SendActionReady(data.src);
+
+                if (AllReady)
+                    ResolveActions();
+            }
+        }
+
+        IEnumerable<Fighter> GetLiveFighters()
+        {
+            return Side.Values.SelectMany(c => c.FighterList).Where(c => c.CurHP > 0);
+        }
+
+        IEnumerable<Player> GetPlayers()
+        {
+            return Side.Values.SelectMany(c => c.FighterList).OfType<Player>();
+        }
+
+        void QueueNpcActions()
+        {
+            foreach (BattleScene scene in Side.Values)
+            {
+                foreach (Fighter npc in scene.FighterList.Where(c => c.TypeofFighter == eFighterType.Npc_Mob && c.CurHP > 0))
+                {
+                    BattleRole targetRole = scene.Role == BattleRole.Attacking ? BattleRole.Defending : BattleRole.Attacking;
+                    Fighter target = Side[(byte)targetRole].FighterList.FirstOrDefault(c => c.CurHP > 0);
+                    if (target != null)
+                    {
+                        pendingActions.RemoveAll(c => c.src == npc);
+                        pendingActions.Add(new BattleAction { src = npc, dst = target });
+                    }
+                }
+            }
+        }
+
+        void ResolveActions()
+        {
+            if (BattleState != eBattleState.Active || RoundState == eBattleRoundState.CalculatingState)
+                return;
+
+            RoundState = eBattleRoundState.CalculatingState;
+
+            List<BattleAction> actions = pendingActions
+                .Where(c => c.src != null && c.dst != null && c.src.CurHP > 0 && c.dst.CurHP > 0)
+                .OrderByDescending(c => c.src.FullSpd)
+                .ToList();
+            pendingActions.Clear();
+
+            foreach (BattleAction action in actions)
+            {
+                if (action.src.CurHP <= 0 || action.dst.CurHP <= 0)
+                    continue;
+
+                uint damage = CalculateDamage(action.src, action.dst);
+                action.dst.CurHP = Math.Max(0, action.dst.CurHP - (int)damage);
+                SendAttack(action.src, action.dst, damage);
+                SendHpUpdate(action.dst);
+            }
+
+            if (!(Side[2].Total_Fighters_Alive > 0 && Side[5].Total_Fighters_Alive > 0))
+                EndBattle(eBattleLeaveType.BattleFinished);
+            else
+                StartRound();
+        }
+
+        uint CalculateDamage(Fighter src, Fighter dst)
+        {
+            int attack = Math.Max(1, src.FullAtk);
+            int defense = Math.Max(0, dst.FullDef / 2);
+            int damage = attack - defense;
+            if (damage < 1)
+                damage = 1;
+            return (uint)damage;
+        }
+
+        void SendActionReady(Fighter fighter)
+        {
+            SendPacket p = new SendPacket();
+            p.Pack8(53);
+            p.Pack8(5);
+            p.Pack8(fighter.GridX);
+            p.Pack8(fighter.GridY);
+            BroadcastToPlayers(p);
+        }
+
+        void SendBattleStart(Player target)
+        {
+            SendPacket p = new SendPacket();
+            p.Pack8(11);
+            p.Pack8(10);
+            p.Pack8(1);
+            target.Send(p);
+        }
+
+        void SendBattleEnd(Player target, eBattleLeaveType t)
+        {
+            SendPacket p = new SendPacket();
+            p.Pack8(11);
+            p.Pack8(1);
+            p.Pack8((byte)t);
+            target.Send(p);
+        }
+
+        void SendHpUpdate(Fighter fighter)
+        {
+            SendPacket p = new SendPacket();
+            p.Pack8(51);
+            p.Pack8(1);
+            p.Pack8(fighter.GridX);
+            p.Pack8(fighter.GridY);
+            p.Pack8(25);
+            p.Pack16((ushort)Math.Max(0, Math.Min(ushort.MaxValue, fighter.CurHP)));
+            p.Pack32(0);
+            BroadcastToPlayers(p);
+        }
+
+        void SendAttack(Fighter src, Fighter dst, uint damage)
+        {
+            SendPacket start = new SendPacket();
+            start.Pack8(50);
+            start.Pack8(6);
+            start.Pack8(src.GridX);
+            start.Pack8(src.GridY);
+            start.Pack8(0);
+            BroadcastToPlayers(start);
+
+            SendPacket p = new SendPacket();
+            p.Pack8(50);
+            p.Pack8(1);
+            p.Pack8(17);
+            p.Pack8(src.GridX);
+            p.Pack8(src.GridY);
+            p.Pack16(0);
+            p.Pack8(0);
+            p.Pack8(1);
+            p.Pack8(dst.GridX);
+            p.Pack8(dst.GridY);
+            p.Pack8(1);
+            p.Pack8(0);
+            p.Pack8(1);
+            p.Pack8(25);
+            p.Pack32(damage);
+            p.Pack8(1);
+            BroadcastToPlayers(p);
+        }
+
+        void BroadcastToPlayers(SendPacket p)
+        {
+            foreach (Player player in GetPlayers())
+                player.Send(new SendPacket(p));
         }
 
         //public void NPC_BattleAction(BattleAction data)
@@ -203,44 +367,50 @@ namespace Game.Battle
 
         public void StartBattle()
         {
-            foreach (Player fighter in Side[2].FighterList.Where(c => c is Player))
-            {
-                //if (fighter != null && fighter.TypeofFighter == eFighterType.player)
-                //{
-                //    fighter.DataOut = SendType.Multi;
-                //    fighter.Send8_1();
-                //    Send_11_250(Background,Side[2].fighterlist, fighter);
-                //    Send_11_5(fighter);
-                //    SendPacket p = new SendPacket();
-                //    p.Pack(new byte[] { 11, 10 });
-                //    p.Pack(1);
-                //    fighter.Send(p);
-                //}
-            }
-            foreach (Player fighter in Side[5].FighterList.Where(c => c is Player))
-            {
-                //if (fighter != null && fighter.TypeofFighter == eFighterType.player)
-                //{
-                //    (fighter as Player).DataOut = SendType.Multi;
-                //    (fighter as Player).Send8_1();
-                //    Send_11_250(Background,Side[5].fighterlist, fighter);
-                //    Send_11_5(fighter);
-                //    SendPacket p = new SendPacket();
-                //    p.Pack(new byte[] { 11, 10 });
-                //    p.Pack(1);
-                //    fighter.Send(p);
-                //}
-            }
-            //foreach (Player fighter in Side[2].FighterList.Where(c => c is Player))
-            //    fighter.DataOut = SendType.Normal;
-            //foreach (Player fighter in Side[5].FighterList.Where(c => c is Player))
-            //    fighter.DataOut = SendType.Normal;
             BattleState = eBattleState.Active;
+
+            List<Fighter> fighters = GetLiveFighters().ToList();
+            foreach (Player fighter in GetPlayers())
+            {
+                Send_11_250(Background, fighters, fighter);
+                SendBattleStart(fighter);
+            }
+
+            StartRound();
         }
 
         public void EndBattle(eBattleLeaveType t)
         {
+            if (BattleState == eBattleState.Ended)
+                return;
+
             BattleState = eBattleState.Ended;
+            RoundState = eBattleRoundState.EndedState;
+
+            foreach (Player player in GetPlayers().ToList())
+            {
+                player.LeaveBattle();
+                SendBattleEnd(player, t);
+            }
+        }
+
+        public void RemFighter(eBattleLeaveType exit, Fighter fighter)
+        {
+            if (fighter == null)
+                return;
+
+            foreach (BattleScene scene in Side.Values)
+                scene.RemoveFighter(fighter);
+
+            Player player = fighter as Player;
+            if (player != null)
+            {
+                SendBattleEnd(player, exit);
+                player.LeaveBattle();
+            }
+
+            if (BattleState == eBattleState.Active && (!(Side[2].Total_Fighters_Alive > 0) || !(Side[5].Total_Fighters_Alive > 0)))
+                EndBattle(exit);
         }
     
         #endregion
@@ -378,21 +548,6 @@ namespace Game.Battle
             //(f as Player).DataOut = SendType.Normal;
         }
 
-        public void RemFighter(eBattleLeaveType o, Fighter src)
-        {
-            //if (Side[(byte)BattleRole.Defending].Fighters_Alive.Count(c => c != src) == 0 || Side[(byte)BattleRole.Attacking].Fighters_Alive.Count(c => c != src) == 0)
-            //{
-            //    Side[(byte)src.BattlePosition].onFighterLeft(this, src.BattlePosition, o, src);
-            //    if (o == eBattleLeaveType.Dced)
-            //        EndBattle(eBattleLeaveType.RunAway);
-            //    else if (o == eBattleLeaveType.Spawn)
-            //        EndBattle(eBattleLeaveType.BattleFinished);
-            //    else
-            //        EndBattle(o);
-            //}
-            //else
-            //    Side[(byte)src.BattlePosition].onFighterLeft(this, src.BattlePosition, o, src);
-        }
         public void RemFighter(eBattleLeaveType o, uint ID)
         {
             RemFighter(o, FindFighter(ID));
@@ -400,11 +555,7 @@ namespace Game.Battle
 
         public Fighter FindFighter(uint ID)
         {
-            //foreach (var t in Side.Values.ToList())
-            //    foreach (Player r in t.FighterList)
-            //        if (r.ID == ID)
-            //            return r;
-            return null;
+            return Side.Values.SelectMany(c => c.FighterList).FirstOrDefault(c => c.ID == ID);
         }
         public Fighter FindFighter(byte x, byte y)
         {
@@ -609,26 +760,32 @@ namespace Game.Battle
         //}
         public void Send_11_250(UInt16 background, List<Fighter> flist, Player target)
         {
-            //this is sent to the player entering combat, and lists all other players already in
-            //if (flist.Count > 0)
-            //{
-            //    SendPacket p = new SendPacket();
-            //    p.Pack(new byte[]{11, 250});
-            //    p.Pack(background);
-            //    foreach (Fighter f in flist)
-            //    {
-            //        p.Pack((byte)f.BattlePosition);
-            //        p.Pack((byte)f.TypeofFighter);
-            //        p.Pack(f.ID);
-            //        p.Pack(f.ClickID); p.Pack(f.OwnerID);
-            //        p.Pack(f.GridX); p.Pack(f.GridY);
-            //        p.Pack((uint)f.MaxHP); p.Pack((ushort)f.MaxSP);
-            //        p.Pack((uint)f.CurHP); p.Pack((ushort)f.CurSP);
-            //        p.Pack((byte)f.Level);
-            //        p.Pack((byte)f.Element); p.Pack(f.Reborn); p.Pack((byte)f.Job);
-            //    }
-            //    target.Send(p);
-            //}
+            if (target == null || flist == null || flist.Count == 0)
+                return;
+
+            SendPacket p = new SendPacket();
+            p.Pack8(11);
+            p.Pack8(250);
+            p.Pack16(background);
+            foreach (Fighter f in flist)
+            {
+                p.Pack8((byte)f.BattlePosition);
+                p.Pack8((byte)f.TypeofFighter);
+                p.Pack32(f.ID);
+                p.Pack16(f.ClickID);
+                p.Pack32(f.OwnerID);
+                p.Pack8(f.GridX);
+                p.Pack8(f.GridY);
+                p.Pack32((uint)Math.Max(0, f.MaxHP));
+                p.Pack16((ushort)Math.Max(0, f.MaxSP));
+                p.Pack32((uint)Math.Max(0, f.CurHP));
+                p.Pack16((ushort)Math.Max(0, f.CurSP));
+                p.Pack8(f.Level);
+                p.Pack8((byte)f.Element);
+                p.PackBool(f.Reborn);
+                p.Pack8((byte)f.Job);
+            }
+            target.Send(p);
         }
 
         //void Send_11_250_BattlePost(Player watcher)

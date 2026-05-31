@@ -24,6 +24,9 @@ namespace Game.Battle
 
         List<Fighter> fighterlist; public IReadOnlyList<Fighter> FighterList { get { return fighterlist; } }
 
+        public Battle Owner { get { return _battleref; } }
+        public BattleRole Role { get { return role; } }
+        public eBattleRoundState RoundState { get { return _battleref.RoundState; } }
 
         public event BattleRoundInfo onRoundStart;
         public event EventHandler onBattleOver;
@@ -61,26 +64,42 @@ namespace Game.Battle
         /// <returns></returns>
         bool AvailableSlot(bool IsPlayer, bool IsPet, bool IsMob, out byte[] location)
         {
-            byte x, y;
+            byte x = 0;
+            byte[] order = new byte[] { 2, 3, 1, 4, 0 };
 
             if (IsPlayer)
             {
-                x = 0;
-                y = 2;
                 switch (role)
                 {
                     case BattleRole.Defending: x = 1; break;
                     case BattleRole.Attacking: x = 4; break;
+                    default:
+                        location = new byte[0];
+                        return false;
                 }
-                switch (fighterlist.Count)
+            }
+            else if (IsMob || IsPet)
+            {
+                switch (role)
                 {
-                    case 0: break;
-                    case 1: y += 1; break;
-                    case 2: y -= 1; break;
-                    case 3: y += 2; break;
+                    case BattleRole.Defending: x = 0; break;
+                    case BattleRole.Attacking: x = 5; break;
+                    default:
+                        location = new byte[0];
+                        return false;
                 }
+            }
+            else
+            {
+                location = new byte[0];
+                return false;
+            }
+
+            foreach (byte y in order)
+            {
                 location = new byte[] { x, y };
-                return HasFighter(location);
+                if (!HasFighter(location))
+                    return true;
             }
 
             location = new byte[0];
@@ -94,7 +113,8 @@ namespace Game.Battle
         /// <returns> true if theres a fighter</returns>
         bool HasFighter(byte[] location)
         {
-            return false;
+            bool alive;
+            return HasFighter(location, out alive);
         }
         /// <summary>
         /// Detmines if a a specific location has a fighter
@@ -105,7 +125,15 @@ namespace Game.Battle
         bool HasFighter(byte[] location, out bool IsAlive)
         {
             IsAlive = false;
-            return false;
+            if (location == null || location.Length < 2)
+                return false;
+
+            Fighter fighter = fighterlist.FirstOrDefault(c => c.GridX == location[0] && c.GridY == location[1]);
+            if (fighter == null)
+                return false;
+
+            IsAlive = fighter.CurHP > 0;
+            return true;
         }
 
 
@@ -119,47 +147,48 @@ namespace Game.Battle
         }
 
 
+        public bool AddFighter(Fighter src)
+        {
+            return OnNewFighter(src);
+        }
+
         bool OnNewFighter(Fighter src)
         {
-            src.OnNewBattle(this);
+            if (src == null || fighterlist.Contains(src))
+                return false;
 
             byte[] loc;
+            bool added = false;
 
             if (src.TypeofFighter == eFighterType.player && AvailableSlot(true, false, false, out loc))
-            {
-                src.GridX = loc[0];
-                src.GridY = loc[1];
-
-                //if (src.Pets.BattlePet != null)
-                //{
-                //    //Fighter pet = new Fighter(g);
-                //    //pet.SetFrom(fighter.playerinfo.pets.GetPetinBattleMode());//finish later
-                //    //pet.actionDone = false;
-                //    //if (fighter.starter)
-                //    //    pet.starter = true;
-                //    //pet.myBattleType = Fighter.eFighterType.Pet;
-                //    //pet.GridX = (byte)(fighter.GridX - 1);
-                //    //pet.GridY = fighter.GridY;
-                //    //pet.myplayerInfo = fighter.playerinfo;
-                //    //pet.ownerID = fighter.ID;
-                //    //pet.clickID = fighter.clickID;//not the right one
-                //    //fighterlist.Add(pet);
-                //}
-                fighterlist.Add(src);
-            }
+                added = true;
             else if (src.TypeofFighter == eFighterType.Npc_Mob && AvailableSlot(false, false, true, out loc))
-            {
-                src.GridX = loc[0];
-                src.GridY = loc[1];
-                fighterlist.Add(src);
-            }
+                added = true;
+            else if (src.TypeofFighter == eFighterType.Pet && AvailableSlot(false, true, false, out loc))
+                added = true;
 
-            return false;
+            if (!added)
+                return false;
+
+            src.BattlePosition = role;
+            src.GridX = loc[0];
+            src.GridY = loc[1];
+            src.OnNewBattle(this);
+            fighterlist.Add(src);
+            return true;
+        }
+
+        public bool RemoveFighter(Fighter fighter)
+        {
+            if (fighter == null)
+                return false;
+
+            return fighterlist.Remove(fighter);
         }
 
         void FighterLeft(eBattleLeaveType exit, Fighter fighter)
         {
-
+            RemoveFighter(fighter);
         }
 
 
@@ -171,6 +200,11 @@ namespace Game.Battle
 
 
 
+
+        public Fighter FindFighter(byte x, byte y)
+        {
+            return fighterlist.FirstOrDefault(c => c.GridX == x && c.GridY == y);
+        }
 
         public void ProcessSocket(RecievePacket g)
         {

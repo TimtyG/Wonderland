@@ -83,6 +83,23 @@ namespace Network.ActionCodes
 
                             }break;
 #endregion
+                        #region battle
+                        case ":battle":
+                            {
+                                if (words.Length > 1 && (words[1] == "test" || words[1] == "start"))
+                                {
+                                    if (p.MyBattle == null)
+                                    {
+                                        Game.Battle.Battle battle = new Game.Battle.Battle(0, Environment.TickCount);
+                                        battle.TypeofBattle = eBattleType.normal;
+                                        battle[BattleRole.Defending].AddFighter(p);
+                                        battle[BattleRole.Attacking].AddFighter(new Game.Battle.TrainingFighter(900001, "Training NPC", 1, 100, 30, 15, 5, 8));
+                                        battle.StartBattle();
+                                    }
+                                }
+                            } break;
+                        #endregion
+
                         #region warp
                         case ":warp":
                             {

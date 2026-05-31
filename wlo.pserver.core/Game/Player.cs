@@ -49,7 +49,7 @@ using Game.Maps;
         }
         
 
-        public class Player : Game.Character, IDisposable, INotifyPropertyChanged
+        public class Player : Game.Character, IDisposable, INotifyPropertyChanged, Game.Battle.Fighter
         {
             private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
@@ -81,6 +81,13 @@ using Game.Maps;
             Inventory m_inv;
             ClientSettings m_settings;
             Game.Battle.BattleScene m_battle;
+            Game.Battle.BattleAction m_battleAction;
+            Game.BattleRole m_battlePosition;
+            DateTime m_roundEndTime;
+            ushort m_battleClickId;
+            uint m_battleOwnerId;
+            byte m_battleGridX;
+            byte m_battleGridY;
             //MailManager m_Mail;
             //Friendlist m_friendlist;
             //RiceBall m_riceball;
@@ -289,39 +296,52 @@ using Game.Maps;
             #endregion
 
             #region Fighter
-            //public BattleSide BattlePosition { get; set; }
-            //public eFighterType TypeofFighter { get; set; }
-            //public BattleAction myAction { get; set; }
-            //public UInt16 ClickID { get { return 0; } set { } }
-            //public UInt16 OwnerID { get { return 0; } set { } }
-            //public byte GridX { get; set; }
-            //public byte GridY { get; set; }
-            //public bool ActionDone { get { return (myAction != null || DateTime.Now > rndend); } }
-            //public DateTime RdEndTime { set { rndend = value; } }
-            //public Int32 MaxHP { get { return (Eqs != null) ? Eqs.FullHP : 0; } }
-            //public Int16 MaxSP { get { return (Eqs != null) ? (short)Eqs.FullSP : (short)0; } }
-            //public override int CurHP
-            //{
-            //    get
-            //    {
-            //        return base.CurHP;
-            //    }
-            //    set
-            //    {
-            //        base.CurHP = value;
-            //    }
-            //}
-            //public override int CurSP
-            //{
-            //    get
-            //    {
-            //        return base.CurSP;
-            //    }
-            //    set
-            //    {
-            //        base.CurSP = value;
-            //    }
-            //}
+            public uint ID { get { return CharID; } }
+            public Game.BattleRole BattlePosition { get { return m_battlePosition; } set { m_battlePosition = value; } }
+            public eFighterType TypeofFighter { get { return eFighterType.player; } }
+            public FighterState BattleState { get { return CurHP > 0 ? FighterState.Alive : FighterState.Dead; } }
+            public UInt16 ClickID { get { return m_battleClickId; } set { m_battleClickId = value; } }
+            public UInt32 OwnerID { get { return m_battleOwnerId; } set { m_battleOwnerId = value; } }
+            public byte GridX { get { return m_battleGridX; } set { m_battleGridX = value; } }
+            public byte GridY { get { return m_battleGridY; } set { m_battleGridY = value; } }
+            public bool ActionDone { get { return m_battleAction != null || DateTime.Now > m_roundEndTime; } }
+            public DateTime RdEndTime { set { m_roundEndTime = value; } }
+            public Int32 MaxHP { get { return (Eqs != null) ? Eqs.FullHP : 0; } }
+            public Int16 MaxSP { get { return (Eqs != null) ? (short)Math.Max(0, Math.Min(short.MaxValue, Eqs.FullSP)) : (short)0; } }
+            public void OnNewBattle(Game.Battle.BattleScene battle)
+            {
+                if (m_battle != null)
+                    m_battle.onRoundStart -= Battle_OnNewRound;
+
+                m_battle = battle;
+                m_battleAction = null;
+                m_roundEndTime = DateTime.Now.AddSeconds(30);
+
+                if (m_battle != null)
+                    m_battle.onRoundStart += Battle_OnNewRound;
+            }
+
+            public void SetBattleAction(Game.Battle.BattleAction action)
+            {
+                m_battleAction = action;
+            }
+
+            public void ClearBattleAction()
+            {
+                m_battleAction = null;
+            }
+
+            public void LeaveBattle()
+            {
+                if (m_battle != null)
+                    m_battle.onRoundStart -= Battle_OnNewRound;
+
+                m_battle = null;
+                m_battleAction = null;
+                m_battlePosition = Game.BattleRole.none;
+                m_battleGridX = 0;
+                m_battleGridY = 0;
+            }
 
             #endregion
 
@@ -464,6 +484,7 @@ using Game.Maps;
             #region Game.Battle
             public void OnBattle_Start(Game.Battle.BattleScene battle)
             {
+                OnNewBattle(battle);
             }
 
             void Battle_OnNewRound(List<Game.Battle.Fighter> fighters_on_my_side, List<Game.Battle.Fighter> fighters_on_other_side)

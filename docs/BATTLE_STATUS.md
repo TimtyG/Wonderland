@@ -1,60 +1,50 @@
 # Battle System Status
 
-Short version: the battle system is only partially present and is not wired into the running server yet.
+Short version: the server now has a minimal, runnable battle path for testing, but it is still not a full Wonderland Online combat implementation.
 
-## Why battles do not currently work
+## What works now
 
-### Battle action codes are not compiled into the active server
+- `AC11` is compiled and can start a simple PK/training battle request.
+- `AC50` is compiled and accepts a basic attack action while the player is in battle.
+- `Battle.StartBattle()` now sends the battle setup packet (`11,250`) and battle start packet (`11,10`).
+- `Battle.PLayer_BattleAction()` records a player's action, sends a ready acknowledgement, resolves simple physical damage, broadcasts attack/HP packets, and starts another round when both sides are still alive.
+- `Player` now implements the `Fighter` interface, so real players can be added to `BattleScene` sides.
+- `BattleScene` now assigns grid slots and can actually add/remove/find fighters.
+- A lightweight `TrainingFighter` NPC fighter exists for local testing.
 
-The main project only compiles these action-code handlers:
+## Test command
 
-- `AC0`
-- `AC02`
-- `AC06`
-- `AC09`
-- `AC12`
-- `AC20`
-- `AC63`
+Use this in chat from a connected character:
 
-The battle-related handlers (`AC11` for PK / battle requests and `AC50` for battle actions) are present as source files, but they are not included in the main project file. They also still reference older namespaces/types, so simply adding them to the project is not enough.
+```text
+:battle test
+```
 
-### Battle start packets are mostly commented out
+That starts a one-player training battle against a dummy NPC. The dummy uses simple stats and auto-queues its basic attack each round.
 
-`Game.Battle.Battle.StartBattle()` sets `BattleState = Active`, but most of the packet-sending code that should tell clients to enter battle is commented out.
+## Client/request support
 
-### Battle action processing is stubbed
+The battle request action code is also wired:
 
-`Game.Battle.Battle.PLayer_BattleAction()` currently has its implementation commented out, so player attack/skill orders are not processed into actual combat packets or damage results.
+- `AC11,2` with PK type `2` starts a player-vs-player battle if the target character is on the same loaded map and not already in battle.
+- `AC11,2` with PK type `3` starts a training/NPC-style battle against a simple server-side dummy fighter.
+- `AC11,1` can remove the player from battle/run away.
+- `AC50,1` submits a basic battle action.
 
-### Maps do not manage battle instances
+## Remaining limitations
 
-`GameMap` has a commented-out `Battles` collection. There is no active map-level loop that owns active battles and calls `Battle.Process()`.
+This is intentionally a minimal first pass. The following are still not complete:
 
-### NPC battle hooks are missing
+- No real skill table integration; all submitted actions currently resolve as a basic physical hit.
+- No pet combat.
+- No real NPC map spawning/random encounters yet.
+- No battle persistence/active battle collection on `GameMap`; this path is driven by the player/battle references.
+- No rewards, EXP, drops, quest hooks, or battle result screen logic beyond ending the battle.
+- No GM permission gate around the new developer test command yet.
 
-NPC/map support is incomplete. `SendMapInfo()` has an empty `Send Npc` region, and the old `SendNpcs()` call is commented. Without map NPCs and an active NPC battle hook, random/NPC battles cannot start in normal gameplay.
+## Suggested next steps
 
-## What exists
-
-The repository does include useful pieces:
-
-- `Game.Battle.Battle`
-- `Game.Battle.BattleScene`
-- `BattleAction`
-- fighter interfaces/enums
-- partial player battle callback code
-- old source for battle-related action codes
-
-These are a starting point, not a finished system.
-
-## Recommended implementation order
-
-1. Port `AC11` and `AC50` to the active `Network.ActionCodes` / `Game` types and add them to `Wonderland Private Server.csproj`.
-2. Add a `ConcurrentDictionary<int, Battle>` or similar active-battle collection back to `GameMap`.
-3. Implement map methods to start PK and NPC battles, add fighters to each side, call `StartBattle()`, and tick `Battle.Process()`.
-4. Rebuild `StartBattle()` packets so the client actually enters the battle UI.
-5. Implement `PLayer_BattleAction()` and damage/skill resolution.
-6. Add NPC spawning/sending first if the goal is NPC/random encounters.
-7. Add GM-only battle test commands after a GM permission gate exists.
-
-Until those pieces are done, expect chat/warp/item commands to work but battle interactions to fail or do nothing.
+1. Add a real GM permission gate before exposing `:battle test`, `:item`, or `:warp` outside a private/dev server.
+2. Wire map NPC definitions and NPC click handling into `AC11,2` PK type `3` instead of always using the dummy fighter.
+3. Load skill data and attach selected skill IDs to `BattleAction` so `AC50` can resolve real skills.
+4. Add rewards/EXP/drop callbacks to `EndBattle()`.

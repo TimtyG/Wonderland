@@ -27,6 +27,24 @@ Notes:
 - `amount` is optional and defaults to `1`.
 - Item `34076` is special-cased so the player only receives it if it is not already in inventory/equipped.
 
+### Start a test battle
+
+```text
+:battle test
+```
+
+Aliases:
+
+```text
+:battle start
+```
+
+Notes:
+
+- Starts a one-player training battle against a dummy NPC fighter.
+- This is a developer smoke-test command for the battle packet/action flow; it is not a full NPC encounter system.
+- There is still no active GM permission check, so keep this on a private/dev server until a permission gate is added.
+
 ### Warp yourself
 
 ```text

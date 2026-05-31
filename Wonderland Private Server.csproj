@@ -136,8 +136,10 @@
     <Compile Include="Src\Network\ActionCodes\AC09.cs">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="Src\Network\ActionCodes\AC11.cs" />
     <Compile Include="Src\Network\ActionCodes\AC12.cs" />
     <Compile Include="Src\Network\ActionCodes\AC20.cs" />
+    <Compile Include="Src\Network\ActionCodes\AC50.cs" />
     <Compile Include="Src\Network\ActionCodes\AC63.cs" />
     <Compile Include="Src\Network\Client.cs" />
     <Compile Include="Src\Program.cs" />

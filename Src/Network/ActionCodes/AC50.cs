@@ -1,84 +1,70 @@
-﻿using System;
-using System.Collections.Generic;
+using System;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Wonderland_Private_Server.Code.Objects;
-using Wonderland_Private_Server.Network;
-using Wonderland_Private_Server.Utilities;
-using Wlo.Core;
+using Game;
+using Game.Battle;
+using Network;
 
-namespace Wonderland_Private_Server.ActionCodes
+namespace Network.ActionCodes
 {
-    public class AC50:AC
+    public class AC50 : AC
     {
         public override int ID { get { return 50; } }
-        public override void ProcessPkt(ref Player r, RecvPacket p)
-        {
-            switch (p.B)
-            {
-                case 1:Recv_1(ref r,p);break;
-                default: LogServices.Log(p.A + "," + p.B + " Has not been coded"); break;
 
+        public override void ProcessPkt(Player r, RecievePacket p)
+        {
+            switch (p.Unpack8())
+            {
+                case 1:
+                    RecvAttack(r, p);
+                    break;
+                default:
+                    log.Warn(p.A + "," + p.B + " Has not been coded");
+                    break;
             }
         }
-        void Recv_1(ref Player r, RecvPacket p) //recieve an attack command
+
+        void RecvAttack(Player r, RecievePacket p)
         {
-            if (r.BattleScene != null && r.BattleScene.RoundState == Code.Enums.eBattleRoundState.ReadyState)
+            if (r == null || r.MyBattle == null || r.MyBattle.Owner == null)
+                return;
+
+            Battle owner = r.MyBattle.Owner;
+            Fighter src = null;
+            Fighter dst = null;
+
+            try
             {
-                BattleAction tmp = new BattleAction();
-                tmp.src = r.BattleScene.FindFighter(p.Unpack8(), p.Unpack8());
-                tmp.dst = r.BattleScene.FindFighter(p.Unpack8(), p.Unpack8());
-                tmp.skill = new DataManagement.DataFiles.Skill();
-                var c1 = cGlobal.gSkillManager.Get_Skill((ushort)p.Unpack16());
-                //var c2 = cGlobal.gSkillManager.Get_Skill((ushort)p.Unpack32(6));
-                if (c1 != null)
-                {
-                    tmp.skill = new DataManagement.DataFiles.Skill(c1.GetData());
-                    tmp.skill.Grade = c1.Grade;
-                    //tmp.skill.Proficiency = c1.Proficiency;
-                }
-                //else
-                    //tmp.skill = new DataManagement.DataFiles.Skill(c2.GetData());
+                byte srcX = p.Unpack8();
+                byte srcY = p.Unpack8();
+                byte dstX = p.Unpack8();
+                byte dstY = p.Unpack8();
 
-                tmp.unknownbyte = p.Unpack8();
-                tmp.unknownbyte2 = p.Unpack8();
-                r.BattleScene.PLayer_BattleAction(tmp);
+                src = owner.FindFighter(srcX, srcY);
+                dst = owner.FindFighter(dstX, dstY);
+
             }
-        }
-        //void Send_1(cFighter src, ushort skill, cFighter dst, bool miss, uint dmg, cCharacter target)
-        //{
-        //    cSendPacket p = new cSendPacket(g);
-        //    p.Header(50, 1);
-        //    p.AddWord(17);
-        //    p.AddByte(src.gridx); p.AddByte(src.gridy);
-        //    p.AddWord(skill);
-        //    p.AddByte(0); p.AddByte(1);
-        //    p.AddByte(dst.gridx); p.AddByte(dst.gridy);
-        //    p.AddByte(1);
-        //    p.AddByte(0);
-        //    p.AddByte(1);
-        //    if (!miss)
-        //        p.AddByte(25);
-        //    else
-        //        p.AddByte(0);
-        //    //Second part is damage calculation
-        //    p.AddDWord(dmg);
-        //    p.AddByte(1);
-        //    p.cCharacter = target;
-        //    p.SetSize();
-        //    p.Send();
-        //}
-        //public void Send_6(cFighter f, byte val, cCharacter target)
-        //{
-        //    cSendPacket p = new cSendPacket(g);
-        //    p.Header(50, 6);
-        //    p.AddByte(f.gridx); p.AddByte(f.gridy);
-        //    p.AddByte(val);
-        //    p.SetSize();
-        //    p.cCharacter = target;
-        //    p.Send();
-        //}
+            catch
+            {
+                src = null;
+                dst = null;
+            }
 
+            if (src == null)
+                src = r;
+            if (src != r)
+                return;
+            if (dst == null)
+                dst = FindFirstEnemy(owner, r.BattlePosition);
+            if (dst == null)
+                return;
+
+            owner.PLayer_BattleAction(new BattleAction { src = src, dst = dst });
+        }
+
+        Fighter FindFirstEnemy(Battle battle, BattleRole sourceRole)
+        {
+            BattleRole enemyRole = sourceRole == BattleRole.Attacking ? BattleRole.Defending : BattleRole.Attacking;
+            return battle[enemyRole].FighterList.FirstOrDefault(c => c.CurHP > 0);
+        }
     }
 }

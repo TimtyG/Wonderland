@@ -70,6 +70,7 @@
     <Compile Include="Game\Battle\BattleScene.cs">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="Game\Battle\TrainingFighter.cs" />
     <Compile Include="Game\Bots\Cupid.cs" />
     <Compile Include="Game\Bots\GmBot.cs" />
     <Compile Include="Game\Delegates.cs" />

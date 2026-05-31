@@ -1,110 +1,81 @@
-﻿using System;
-using System.Collections.Generic;
+using System;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Wonderland_Private_Server.Code.Objects;
-using Wonderland_Private_Server.Network;
-using Wonderland_Private_Server.Utilities;
-using Wonderland_Private_Server.DataManagement.DataFiles;
-using Wonderland_Private_Server.Code.Interface;
-using Wlo.Core;
+using Game;
+using Game.Battle;
+using Network;
 
-namespace Wonderland_Private_Server.ActionCodes
+namespace Network.ActionCodes
 {
-    public class AC11:AC
+    public class AC11 : AC
     {
         public override int ID { get { return 11; } }
-        public override void ProcessPkt(ref Player r, RecvPacket p)
-        {
-            switch (p.B)
-            {
-                case 1: Recv_1(ref r, p); break;
-                case 2: Recv_2(ref r, p); break; //a pk was initiated
 
-                default: LogServices.Log(p.A + "," + p.B + " Has not been coded"); break;
-            }
-        }
-        public void Recv_1(ref Player r, RecvPacket p)
+        public override void ProcessPkt(Player r, RecievePacket p)
         {
             switch (p.Unpack8())
             {
-                case 3: r.BattleScene.RemFighter(Code.Enums.eBattleLeaveType.RunAway, r); break;
+                case 1:
+                    RecvLeave(r, p);
+                    break;
+                case 2:
+                    RecvPk(r, p);
+                    break;
+                default:
+                    log.Warn(p.A + "," + p.B + " Has not been coded");
+                    break;
             }
         }
-        public void Recv_2(ref Player r, RecvPacket p) //pk
+
+        void RecvLeave(Player r, RecievePacket p)
         {
-            //check if gm
-            //if (!r.GM)
-            //{
-            //    SendPacket t = new SendPacket();
-            //    t = new SendPacket();
-            //    t.Pack(new byte[] { 2, 3 });
-            //    t.Pack(100);
-            //    t.PackNString("Only GMs can start PK Battles %#");
-            //    r.Send(t);
-            //    return;
-            //}
+            byte leaveType = 0;
+            try { leaveType = p.Unpack8(); }
+            catch { }
 
-            byte pkType = p.Unpack8(); //pk type
-            UInt32 targetID = p.Unpack32(); //id of player that was attacked
-            UInt16 clickID = p.Unpack16(); //npc, or pc's index (not sure if used on pc pks)
-
-            switch (pkType)
-            {
-                case 2: //pk against other pc
-                    {
-                        if (r.CurrentMap.Players[targetID] != null)
-                        {
-                            //also check to see if both chars have their pk turned on TODO
-                            if (r.Settings.PKABLE && r.CurrentMap.Players[targetID].Settings.PKABLE)
-                                r.CurrentMap.onPk_Started(r, r.CurrentMap.Players[targetID]);
-                        }
-                    } break;
-                case 3: //pk againts npc
-                    {
-                        Npc target = cGlobal.gNpcManager.GetNpc((ushort)targetID);
-                        target.ClickID = clickID;
-                        if (r.CurrentMap != null)
-                            r.CurrentMap.onNpcPk(r, target);
-
-                    } break;
-                case 4: //join
-                    {
-                        //cCharacter t = g.gDataManager.cCharacterManager.getByID(targetID);
-                        //if (t != null && t.battle != null)
-                        //{
-                        //    cFighter w = new cFighter(g);
-                        //    w.SetFrom(c);
-                        //    t.battle.FighterWatch(w);
-                        //    cSendPacket watchstate = new cSendPacket(g);
-                        //    watchstate.Header(11, 4);
-                        //    watchstate.AddByte(2);
-                        //    watchstate.AddDWord(c.characterID);
-                        //    watchstate.AddWord(0);
-                        //    watchstate.AddByte(4);
-                        //    watchstate.SetSize();
-                        //    g.gDataManager.MapManager.GetMapByID(c.mapLoc).SendtocCharactersEx(watchstate, c);
-                        //}
-
-                    } break;
-                case 5: //watch
-                    {
-                        //cCharacter t = g.gDataManager.cCharacterManager.getByID(targetID);
-                        //if (t != null && t.battle != null)
-                        //{
-                        //    cFighter w = new cFighter(g);
-                        //    w.SetFrom(c);
-                        //    w.Position = t.battle.FindFighterbyID((int)targetID).Position;
-                        //    t.battle.FighterJoin(w);
-
-
-                        //}
-
-                    } break;
-            }
-            //get the cCharacter file for target
+            if (r != null && r.MyBattle != null)
+                r.MyBattle.Owner.RemFighter(leaveType == 3 ? eBattleLeaveType.RunAway : eBattleLeaveType.BattleFinished, r);
         }
 
+        void RecvPk(Player r, RecievePacket p)
+        {
+            if (r == null || r.MyBattle != null)
+                return;
+
+            byte pkType = p.Unpack8();
+            UInt32 targetID = p.Unpack32();
+            UInt16 clickID = p.Unpack16();
+
+            if (pkType == 2)
+                StartPlayerBattle(r, targetID, clickID);
+            else if (pkType == 3)
+                StartTrainingBattle(r, targetID, clickID);
+        }
+
+        void StartPlayerBattle(Player attacker, uint targetID, ushort clickID)
+        {
+            GameMap map = attacker.CurMap as GameMap;
+            if (map == null)
+                return;
+
+            Player defender = map.Players.FirstOrDefault(c => c.CharID == targetID);
+            if (defender == null || defender == attacker || defender.MyBattle != null)
+                return;
+
+            Battle battle = new Battle(0, Environment.TickCount);
+            battle.TypeofBattle = eBattleType.pk;
+            battle[BattleRole.Attacking].AddFighter(attacker);
+            defender.ClickID = clickID;
+            battle[BattleRole.Defending].AddFighter(defender);
+            battle.StartBattle();
+        }
+
+        void StartTrainingBattle(Player attacker, uint targetID, ushort clickID)
+        {
+            Battle battle = new Battle(0, Environment.TickCount);
+            battle.TypeofBattle = eBattleType.normal;
+            battle[BattleRole.Defending].AddFighter(attacker);
+            battle[BattleRole.Attacking].AddFighter(new TrainingFighter(targetID == 0 ? 900001U : targetID, "Training NPC", 1, 100, 30, 15, 5, 8) { ClickID = clickID });
+            battle.StartBattle();
+        }
     }
 }
