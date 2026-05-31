@@ -106,6 +106,10 @@ The script checks for common missing files and tools, but it cannot supply missi
 - The codebase is old and depends on .NET Framework/WinForms, so modern cross-platform `dotnet run` is not the right path.
 - Some code paths are incomplete/commented out; expect additional debugging after the project first builds.
 
+## GM / developer commands
+
+See `docs/GM_COMMANDS.md` for the current command parser. At the moment, the active commands are developer-style `:item add <itemId> [amount]` and `:warp <mapId> <x> <y>` commands; there is not yet a full permissioned GM system or NPC-spawn command.
+
 ## Troubleshooting the startup log
 
 ### `Connection not successful unable to authenticate users connecting to server`
